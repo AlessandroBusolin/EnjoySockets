@@ -93,7 +93,7 @@ public static class MainChat
         BinaryPrimitives.WriteInt32LittleEndian(CollectionsMarshal.AsSpan(_message), user.UserId);
         _message.AddRange(msg);
 
-        if (ESerial.Serialize(_bufferMsg, _message) < 1)
+        if (user.ESerial.Serialize(_bufferMsg, _message) < 1)
             return;
 
         var payload = _bufferMsg.WrittenSpan;
