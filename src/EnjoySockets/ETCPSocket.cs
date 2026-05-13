@@ -1,9 +1,6 @@
 ﻿// Copyright (c) Luke Matt. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
-using EnjoySockets.DTO;
-using System.Buffers;
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 
@@ -28,15 +25,6 @@ namespace EnjoySockets
         public const int MaxCachedResponses = 50;
         public const int MinBufferSlotSizeBytes = 30;
 
-        static readonly ConcurrentStack<ConnectDTO> _poolConnectDTO = new();
-        static ArrayPool<byte> _poolConnectArray = ArrayPool<byte>.Create();
-        static ConnectDTO RentConnectDTO() => _poolConnectDTO.TryPop(out var s) ? s : new();
-        internal static void ReturnConnectDTO(ConnectDTO? dto)
-        {
-            if (dto != null)
-                _poolConnectDTO.Push(dto);
-        }
-
         #region Receive methods
 
         internal static async ValueTask<ReadOnlyMemory<byte>> Receive(Socket socket, EReceiveArgs args)
@@ -53,57 +41,6 @@ namespace EnjoySockets
                     return args.GetSaveBytes();
             }
             return Memory<byte>.Empty;
-        }
-
-        /// <summary>
-        /// Read, encrypt and deserialize to 'ConnectDTO'
-        /// </summary>
-        internal static async Task<ConnectDTO?> Receive(Socket? socket, ERSA rsa)
-        {
-            if (socket == null || !socket.Connected)
-                return null;
-
-            var bufferArr = _poolConnectArray.Rent(1024);
-            try
-            {
-                var buffer = bufferArr.AsMemory();
-                var prefix = buffer.Slice(0, PacketPrefixLength);
-                if (await Read(socket, prefix))
-                {
-                    var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(prefix.Span);
-                    if (dataLength > 512 || dataLength < 126)
-                        return null;
-
-                    var data = buffer.Slice(0, dataLength);
-                    if (await Read(socket, data))
-                    {
-                        var written = await rsa.Decrypt(data, buffer.Slice(dataLength));
-                        if (written <= 293 && written >= 126)
-                        {
-                            var endBuff = buffer.Slice(dataLength, written);
-                            if (endBuff.Span[0] == 255 || //ConnectDTO (255 = null)
-                                endBuff.Span[17] != 32 || //TokenToReconnect length
-                                endBuff.Span[53] != 32 || //NewTokenToReconnect length
-                                endBuff.Span[89] < 33 || //Key length
-                                endBuff.Span[89] > 200)
-                                return null;
-
-                            var dto = RentConnectDTO();
-                            if (!ESerial.Deserialize(endBuff.Span, ref dto))
-                            {
-                                ReturnConnectDTO(dto);
-                                return null;
-                            }
-                            return dto;
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                _poolConnectArray.Return(bufferArr);
-            }
-            return null;
         }
 
         internal static async ValueTask<ReadOnlyMemory<byte>> Receive(Socket socket, EAesGcm aes, EReceiveArgs args)
@@ -168,9 +105,9 @@ namespace EnjoySockets
             return totalRead;
         }
 
-        internal static async ValueTask<bool> ReadContinueAsync(Socket socket, EReceiveArgs args, int readed)
+        internal static async ValueTask<bool> ReadContinueAsync(Socket socket, EReceiveArgs args, int read)
         {
-            int totalRead = readed;
+            int totalRead = read;
 
             int bytesRead = await args.WaitForCompletionAsync();
 
@@ -247,7 +184,7 @@ namespace EnjoySockets
             return true;
         }
 
-        static async ValueTask<bool> Read(Socket socket, Memory<byte> buffer)
+        internal static async ValueTask<bool> Read(Socket socket, Memory<byte> buffer)
         {
             int bytesRead = 0;
             while (bytesRead < buffer.Length)

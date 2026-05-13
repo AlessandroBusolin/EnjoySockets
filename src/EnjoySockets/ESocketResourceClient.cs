@@ -1,12 +1,10 @@
 ﻿// Copyright (c) Luke Matt. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
-using EnjoySockets.DTO;
-
 namespace EnjoySockets
 {
     public class ESocketResourceClient : ESocketResource
     {
-        internal byte[] NewTokenToReconnect = new byte[32];
+        internal byte[] Salt = new byte[32];
 
         internal ETCPClientConfig ConfigClient { get; private set; }
         internal ECacheSender MsgCache { get; private set; }
@@ -31,12 +29,12 @@ namespace EnjoySockets
 
         int _publicKeyLength;
         int _offsetServerPublicKey;
-        internal ReadOnlyMemory<byte> BuildSignature(ConnectResponseDTO dto, byte[] token)
+        internal ReadOnlyMemory<byte> BuildSignature(ReadOnlyMemory<byte> publicKey, byte[] token)
         {
-            if (dto.PublicKey.Length != _publicKeyLength)
+            if (publicKey.Length != _publicKeyLength)
                 return ReadOnlyMemory<byte>.Empty;
 
-            dto.PublicKey.CopyTo(ToSignature.AsMemory(_offsetServerPublicKey, _publicKeyLength));
+            publicKey.CopyTo(ToSignature.AsMemory(_offsetServerPublicKey, _publicKeyLength));
             token.CopyTo(ToSignature, ToSignature.Length - token.Length);
             return ToSignature.AsMemory();
         }
@@ -45,7 +43,7 @@ namespace EnjoySockets
         {
             try
             {
-                return SetAesGcmKey(NewTokenToReconnect);
+                return SetAesGcmKey(Salt);
             }
             catch { return false; }
         }

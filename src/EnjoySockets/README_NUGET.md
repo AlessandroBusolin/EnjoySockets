@@ -1,6 +1,6 @@
 # EnjoySockets
 
-**EnjoySockets** is a high-performance C# library designed for TCP communication, with UDP support currently on the roadmap. It bridges the gap between low-level socket programming and overly complex frameworks, offering a "batteries-included" experience.
+**EnjoySockets** is a lightweight, low-latency, message-driven TCP runtime for C# with RPC routing, actor-like instances and deterministic execution channels.
 
 ## Why EnjoySockets?
 

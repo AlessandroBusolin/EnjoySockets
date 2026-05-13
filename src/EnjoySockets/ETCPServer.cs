@@ -1,12 +1,12 @@
 // Copyright (c) Luke Matt. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
-using EnjoySockets.DTO;
+using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace EnjoySockets
 {
@@ -50,7 +50,12 @@ namespace EnjoySockets
         readonly ERSA _rsaKey;
         readonly int _delayAfterFullError;
         Socket? _servSocket;
+        byte _connectResponse = 4;
+        readonly byte[] _reconnectResponse = [5];
+        readonly byte[] _errorFullServer = [3];
         MethodInfo? _authorizationMethod = null;
+        ArrayPool<byte> _poolConnectArray = ArrayPool<byte>.Create();
+        readonly ConcurrentDictionary<Guid, EUserServer> _clients = new();
 
         internal ETCPServerConfig Config { get; private set; }
 
@@ -110,6 +115,8 @@ namespace EnjoySockets
                             {
                                 AuthorizationObj = _authorizationParams[0].ParameterType;
                                 _authorizationMethod = method;
+                                _connectResponse = 1;
+                                _reconnectResponse[0] = 2;
                             }
                         }
                     }
@@ -353,49 +360,79 @@ namespace EnjoySockets
                 StopAndReconnect();
         }
 
-        readonly byte[] _errorFullServer = ESerial.Serialize(new ConnectResponseDTO() { Control = 3 }) ?? [];
-        readonly ConcurrentDictionary<Guid, EUserServer> _clients = new();
         async Task RunClient(Socket socket)
         {
-            var receiveTask = ETCPSocket.Receive(socket, _rsaKey);
-            var completed = await Task.WhenAny(receiveTask, Task.Delay(Config.ResponseTimeout));
-
-            ConnectDTO? connectDTO = null;
-            if (completed == receiveTask)
-                connectDTO = receiveTask.Result;
-
-            if (connectDTO != null)
+            var bufferArr = _poolConnectArray.Rent(1024);
+            try
             {
-                if (
-                    _clients.TryGetValue(connectDTO.UserId, out EUserServer? clientAlive)
-                    && clientAlive != null
-                    && clientAlive.Status != ESocketServerStatus.Dead
-                    )
-                    await TryReconnectClient(connectDTO, socket, clientAlive);
-                else
-                    await TryMakeNewClient(connectDTO, socket);
+                var receiveTask = ReceiveConnectBytes(socket, _rsaKey, bufferArr);
+                var completed = await Task.WhenAny(receiveTask, Task.Delay(Config.ResponseTimeout));
 
-                ETCPSocket.ReturnConnectDTO(connectDTO);
-                return;
+                ReadOnlyMemory<byte> connectDTO = ReadOnlyMemory<byte>.Empty;
+                if (completed == receiveTask)
+                    connectDTO = receiveTask.Result;
+
+                if (connectDTO.Length > 0)
+                {
+                    if (
+                        _clients.TryGetValue(ReadUserId(connectDTO), out EUserServer? clientAlive)
+                        && clientAlive != null
+                        && clientAlive.Status != ESocketServerStatus.Dead
+                        )
+                        await TryReconnectClient(connectDTO, socket, clientAlive);
+                    else
+                        await TryMakeNewClient(connectDTO, socket);
+
+                    return;
+                }
+                ETCPSocket.Close(socket);
             }
-            ETCPSocket.Close(socket);
-            Interlocked.Decrement(ref _concurrentLogins);
+            finally
+            {
+                _poolConnectArray.Return(bufferArr);
+                Interlocked.Decrement(ref _concurrentLogins);
+            }
         }
 
-        async ValueTask TryReconnectClient(ConnectDTO connectDTO, Socket socket, EUserServer clientAlive)
+        async Task<ReadOnlyMemory<byte>> ReceiveConnectBytes(Socket? socket, ERSA rsa, byte[] bufferArr)
         {
-            if (clientAlive.SocketResource?.TryReconnectToken(CollectionsMarshal.AsSpan(connectDTO.TokenToReconnect), CollectionsMarshal.AsSpan(connectDTO.NewTokenToReconnect)) ?? false)
+            if (socket == null || !socket.Connected)
+                return ReadOnlyMemory<byte>.Empty;
+
+            var buffer = bufferArr.AsMemory();
+            var prefix = buffer.Slice(0, ETCPSocket.PacketPrefixLength);
+            if (await ETCPSocket.Read(socket, prefix))
+            {
+                var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(prefix.Span);
+                if (dataLength > 512 || dataLength < 112)
+                    return ReadOnlyMemory<byte>.Empty;
+
+                var data = buffer.Slice(0, dataLength);
+                if (await ETCPSocket.Read(socket, data))
+                {
+                    var written = await rsa.Decrypt(data, buffer.Slice(dataLength));
+                    if (written >= 112 && written <= 300)
+                        return buffer.Slice(dataLength, written);
+                }
+            }
+            return ReadOnlyMemory<byte>.Empty;
+        }
+
+        async ValueTask TryReconnectClient(ReadOnlyMemory<byte> connectDTO, Socket socket, EUserServer clientAlive)
+        {
+            if (clientAlive.SocketResource?.CheckReconnectToken(ReadToken(connectDTO)) ?? false)
             {
                 try
                 {
                     if (clientAlive.AppendSocket(socket))
                     {
-                        if (await clientAlive.SocketResource.SendPlainBytesObj(new ConnectResponseDTO() { Control = AuthorizationObj != null ? (byte)1 : (byte)4 }))
+                        if (await clientAlive.SocketResource.SendAsPlainBytes(_reconnectResponse))
                         {
-                            if (AuthorizationObj != null)
+                            clientAlive.SocketResource.SetAesGcmKey(ReadSalt(connectDTO));
+                            var msgBytes = await clientAlive.SocketResource.ReceiveEncryptWithTimeout();
+                            if (msgBytes.Length > 1)
                             {
-                                var msgBytes = await clientAlive.SocketResource.ReceiveEncryptWithTimeout();
-                                if (msgBytes.Length > 1)
+                                if (AuthorizationObj != null)
                                 {
                                     var objAuth = ESerial.Deserialize(msgBytes.Span, AuthorizationObj);
                                     var resAuth = await clientAlive.CheckAuthorization(objAuth);
@@ -406,11 +443,14 @@ namespace EnjoySockets
                                         return;
                                     }
                                 }
-                            }
-                            else
-                            {
-                                StartUser(clientAlive);
-                                return;
+                                else
+                                {
+                                    if (clientAlive.SocketResource.CheckReconnectToken(msgBytes.Span))
+                                    {
+                                        StartUser(clientAlive);
+                                        return;
+                                    }
+                                }
                             }
                         }
                     }
@@ -421,48 +461,54 @@ namespace EnjoySockets
                 }
             }
             ETCPSocket.Close(socket);
-            Interlocked.Decrement(ref _concurrentLogins);
         }
 
-        async ValueTask TryMakeNewClient(ConnectDTO connectDTO, Socket socket)
+        async ValueTask TryMakeNewClient(ReadOnlyMemory<byte> connectDTO, Socket socket)
         {
             if (ServerIsAvailable())
             {
                 var esr = RentESR(Config, _rsaKey);
-
-                if (esr.SetAesGcmKey(CollectionsMarshal.AsSpan(connectDTO.Key), CollectionsMarshal.AsSpan(connectDTO.NewTokenToReconnect)))
+                if (esr.SetAesGcmKey(ReadKey(connectDTO), ReadSalt(connectDTO)))
                 {
-                    var signature = await esr.BuildSignature(connectDTO);
+                    var signature = await esr.BuildSignature(ReadKey(connectDTO));
                     if (signature.Length > 0)
                     {
                         esr.AppendSocket(socket);
-                        if (await esr.SendPlainBytesObj(new ConnectResponseDTO() { Control = AuthorizationObj != null ? (byte)2 : (byte)5, PublicKey = esr.PublicKey, Sign = signature }))
+                        var bufferResponseDTO = _poolConnectArray.Rent(1024);
+                        try
                         {
-                            if (AuthorizationObj != null)
+                            if (await esr.SendAsPlainBytes(BuildResponseDTO(_connectResponse, esr.PublicKey, signature, bufferResponseDTO)))
                             {
-                                var msgBytes = await esr.ReceiveEncryptWithTimeout();
-                                if (msgBytes.Length > 1)
+                                if (AuthorizationObj != null)
+                                {
+                                    var msgBytes = await esr.ReceiveEncryptWithTimeout();
+                                    if (msgBytes.Length > 1)
+                                    {
+                                        var client = CreateUser(esr);
+                                        client.ReleaseEvent = ReleaseUser;
+                                        client.AuthorizationMethod = _authorizationMethod;
+                                        var objAuth = ESerial.Deserialize(msgBytes.Span, AuthorizationObj);
+                                        var resAuth = await client.CheckAuthorization(objAuth);
+                                        await esr.SendBytes(resAuth);
+                                        if (resAuth == 0)
+                                        {
+                                            StartUser(ReadUserId(connectDTO), client);
+                                            return;
+                                        }
+                                    }
+                                }
+                                else
                                 {
                                     var client = CreateUser(esr);
                                     client.ReleaseEvent = ReleaseUser;
-                                    client.AuthorizationMethod = _authorizationMethod;
-                                    var objAuth = ESerial.Deserialize(msgBytes.Span, AuthorizationObj);
-                                    var resAuth = await client.CheckAuthorization(objAuth);
-                                    await esr.SendBytes(resAuth);
-                                    if (resAuth == 0)
-                                    {
-                                        StartUser(connectDTO.UserId, client);
-                                        return;
-                                    }
+                                    StartUser(ReadUserId(connectDTO), client);
+                                    return;
                                 }
                             }
-                            else
-                            {
-                                var client = CreateUser(esr);
-                                client.ReleaseEvent = ReleaseUser;
-                                StartUser(connectDTO.UserId, client);
-                                return;
-                            }
+                        }
+                        finally
+                        {
+                            _poolConnectArray.Return(bufferResponseDTO);
                         }
                     }
                 }
@@ -471,11 +517,10 @@ namespace EnjoySockets
             }
             else
             {
-                await ETCPSocket.Send(socket, _errorFullServer);
-                await Task.Delay(_delayAfterFullError);
+                if (await ETCPSocket.Send(socket, _errorFullServer))
+                    await Task.Delay(_delayAfterFullError);
             }
             ETCPSocket.ShutdownAndClose(socket);
-            Interlocked.Decrement(ref _concurrentLogins);
         }
 
         void ReleaseUser(EUserServer user, ESocketResourceServer? esr)
@@ -509,8 +554,6 @@ namespace EnjoySockets
         {
             if (!user.Start())
                 user.Dispose();
-
-            Interlocked.Decrement(ref _concurrentLogins);
         }
 
         void StartUser(Guid id, EUserServer user)
@@ -518,8 +561,25 @@ namespace EnjoySockets
             user.UserId = id;
             if (!(user.Start() && _clients.TryAdd(id, user)))
                 user.Dispose();
+        }
 
-            Interlocked.Decrement(ref _concurrentLogins);
+        Guid ReadUserId(ReadOnlyMemory<byte> buffer) => new(buffer.Span[..16]);
+        ReadOnlySpan<byte> ReadToken(ReadOnlyMemory<byte> buffer) => buffer.Slice(16, 32).Span;
+        ReadOnlySpan<byte> ReadSalt(ReadOnlyMemory<byte> buffer) => buffer.Slice(48, 32).Span;
+        ReadOnlySpan<byte> ReadKey(ReadOnlyMemory<byte> buffer) => buffer[80..].Span;
+        ReadOnlyMemory<byte> BuildResponseDTO(byte control, ReadOnlyMemory<byte> publicKey, ReadOnlyMemory<byte> signature, byte[] buffer)
+        {
+            var length = 5 + publicKey.Length + signature.Length;
+            if (length <= buffer.Length)
+            {
+                buffer[0] = control;
+                BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(1, 2), (ushort)publicKey.Length);
+                BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(3, 2), (ushort)signature.Length);
+                publicKey.CopyTo(buffer.AsMemory(5));
+                signature.CopyTo(buffer.AsMemory(5 + publicKey.Length));
+                return new ReadOnlyMemory<byte>(buffer, 0, length);
+            }
+            return ReadOnlyMemory<byte>.Empty;
         }
     }
 }

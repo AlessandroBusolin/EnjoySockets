@@ -7,7 +7,6 @@ namespace EnjoySockets
 {
     public abstract class EUser<T1> where T1 : ESocketResource
     {
-        public ETCPSocketType ESocketType { get; protected set; }
         internal Guid UserId { get; set; }
 
         public EndPoint? EndPointSocket { get => SocketResource?.BasicSocket?.RemoteEndPoint; }

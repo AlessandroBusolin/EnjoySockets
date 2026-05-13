@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<RootNamespace>EnjoySockets</RootNamespace>
 		<AssemblyName>EnjoySockets</AssemblyName>
-		<Version>1.2.2</Version>
+		<Version>1.3.0</Version>
 		<PackageId>EnjoySockets</PackageId>
 		<TargetFrameworks>net6.0;net8.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
@@ -13,10 +13,10 @@
 		<NoWarn>$(NoWarn);1591</NoWarn>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 		<Authors>Luke Matt</Authors>
-		<Description>EnjoySockets - high-performance TCP sockets for .NET 6 and 8+, built for client-server apps with secure and RPC. Modern async API, efficient binary protocols, and built-in encryption (AES-GCM, RSA, ECDH) make networking simple, reliable, and safe.</Description>
+		<Description>EnjoySockets - lightweight, low-latency, message-driven TCP runtime for C# with RPC routing, actor-like instances and deterministic execution channels.</Description>
 		<RepositoryUrl>https://github.com/lukematt574/EnjoySockets</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
-		<PackageTags>tcp;networking;sockets;high-performance;rpc;client-server;binary-protocol;encryption</PackageTags>
+		<PackageTags>tcp;networking;sockets;rpc;client-server;binary-protocol;encryption;message-driven;low-latency;actor-model;distributed-systems</PackageTags>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageIcon>icon.png</PackageIcon>
 		<PackageReadmeFile>README_NUGET.md</PackageReadmeFile>

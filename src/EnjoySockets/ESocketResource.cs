@@ -116,7 +116,7 @@ namespace EnjoySockets
             }
         }
 
-        private protected bool SetAesGcmKey(ReadOnlySpan<byte> salt)
+        internal bool SetAesGcmKey(ReadOnlySpan<byte> salt)
         {
             salt.CopyTo(TokenToReconnect);
             return AESgcm.SetKey(AESKey, salt);
@@ -134,31 +134,19 @@ namespace EnjoySockets
         }
 
         /// <summary>
-        /// Send plain bytes
+        /// Send as plain bytes
         /// </summary>
-        internal ValueTask<bool> SendPlainBytes(ReadOnlyMemory<byte> bytes)
+        internal ValueTask<bool> SendAsPlainBytes(ReadOnlyMemory<byte> bytes)
         {
             return ETCPSocket.Send(BasicSocket, SendArgs, bytes);
         }
 
         /// <summary>
-        /// Send plain bytes as obj
+        /// Send as encrypt bytes
         /// </summary>
-        internal ValueTask<bool> SendPlainBytesObj<T>(T obj)
+        internal ValueTask<bool> SendAsEncryptBytes(ReadOnlyMemory<byte> bytes)
         {
-            if (obj == null) return ValueTask.FromResult(false);
-            var buffer = _eArrayBufferPool.Rent();
-            try
-            {
-                var payloadLength = ESerial.Serialize(buffer, obj, obj.GetType());
-                if (payloadLength == 0 || payloadLength > ETCPSocket.MaxPacketSizeConnect)
-                    return ValueTask.FromResult(false);
-                return ETCPSocket.Send(BasicSocket, SendArgs, buffer.WrittenMemory);
-            }
-            finally
-            {
-                _eArrayBufferPool.Return(buffer);
-            }
+            return ETCPSocket.Send(BasicSocket, SendArgs, AESgcm, bytes);
         }
 
         /// <summary>
@@ -232,13 +220,13 @@ namespace EnjoySockets
                     break;
 
                 //prefix
-                var readed = ETCPSocket.TryRead(BasicSocket, ReceiveArgs, ETCPSocket.PacketPrefixLength);
-                if (readed < 0)
+                var read = ETCPSocket.TryRead(BasicSocket, ReceiveArgs, ETCPSocket.PacketPrefixLength);
+                if (read < 0)
                     break;
 
-                if (readed != ETCPSocket.PacketPrefixLength)
+                if (read != ETCPSocket.PacketPrefixLength)
                 {
-                    if (!await ETCPSocket.ReadContinueAsync(BasicSocket, ReceiveArgs, readed))
+                    if (!await ETCPSocket.ReadContinueAsync(BasicSocket, ReceiveArgs, read))
                         break;
                 }
 
@@ -247,12 +235,12 @@ namespace EnjoySockets
                     break;
 
                 //rest
-                if ((readed = ETCPSocket.TryRead(BasicSocket, ReceiveArgs, dataLength)) < 0)
+                if ((read = ETCPSocket.TryRead(BasicSocket, ReceiveArgs, dataLength)) < 0)
                     break;
 
-                if (readed != dataLength)
+                if (read != dataLength)
                 {
-                    if (!await ETCPSocket.ReadContinueAsync(BasicSocket, ReceiveArgs, readed))
+                    if (!await ETCPSocket.ReadContinueAsync(BasicSocket, ReceiveArgs, read))
                         break;
                 }
 
@@ -322,7 +310,7 @@ namespace EnjoySockets
                         }
                         else if (EReceiveCells.TryGetShareChannel(attr.ChannelId, out EReceiveChannel? channel))
                         {
-                            return PushToChannelReceive(channel, eData); ;
+                            return PushToChannelReceive(channel, eData);
                         }
                         else if (EReceiveCells.TryGetPrivateChannel(attr.ChannelId, out EAttrChannel? attrChannel))
                         {
@@ -330,12 +318,12 @@ namespace EnjoySockets
                             {
                                 var endChannel = new EReceiveChannel(true, attrChannel.ChannelTasks);
                                 _privateChannels.Add(attr.ChannelId, endChannel);
-                                return PushToChannelReceive(endChannel, eData); ;
+                                return PushToChannelReceive(endChannel, eData);
                             }
                         }
                         else
                         {
-                            return PushToChannelReceive(ChannelReceiveBasic, eData); ;
+                            return PushToChannelReceive(ChannelReceiveBasic, eData);
                         }
                     }
                 }

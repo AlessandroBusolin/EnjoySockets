@@ -1,6 +1,6 @@
 // Copyright (c) Luke Matt. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
-using EnjoySockets.DTO;
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -376,8 +376,8 @@ namespace EnjoySockets
             }
         }
 
-        readonly byte[] BufferConDTO = new byte[512];
-        readonly ConnectDTO ConnectDTOObj = new();
+        readonly byte[] _bufferConnectDTO = new byte[512];
+        readonly byte[] _bufferEncryptConnectDTO = new byte[512];
         bool _connecting = false;
         bool _firstConnect = true;
         /// <summary>
@@ -431,60 +431,61 @@ namespace EnjoySockets
                 if (connectResult != 0)
                     return Close(connectResult);
 
-                RandomNumberGenerator.Fill(SocketResource.NewTokenToReconnect);
-                FillConnectDTO();
-                var conDTO = ESerial.Serialize(ConnectDTOObj);
-
-                int countConDTO = await SocketResource.Ersa.Encrypt(conDTO, BufferConDTO);
-                if (await SocketResource.SendPlainBytes(BufferConDTO.AsMemory(0, countConDTO)))
+                var connectDTO = BuildConnectDTO();
+                int lengthEncryptConnectDTO = await SocketResource.Ersa.Encrypt(connectDTO, _bufferEncryptConnectDTO);
+                if (await SocketResource.SendAsPlainBytes(_bufferEncryptConnectDTO.AsMemory(0, lengthEncryptConnectDTO)))
                 {
-                    var msg = await ETCPSocket.ReceiveWithTimeout(ETCPSocket.Receive(SocketResource.BasicSocket!, SocketResource.ReceiveArgs), SocketResource.Config.ResponseTimeout);
-                    if (msg.Length < 1)
+                    var responseDTO = await ETCPSocket.ReceiveWithTimeout(ETCPSocket.Receive(SocketResource.BasicSocket!, SocketResource.ReceiveArgs), SocketResource.Config.ResponseTimeout);
+
+                    var control = ReadControl(responseDTO);
+
+                    if (control == 0)
                         return Close(4);
 
-                    var connectDTO = ESerial.Deserialize<ConnectResponseDTO>(msg.Span);
-                    if (connectDTO != null)
+                    if (control == 3)
+                        return Close(control);
+
+                    if (control == 2 || control == 5)
                     {
-                        if (connectDTO.Control == 3)
-                            return Close(3);
+                        //old key
+                        if (_firstConnect || !SocketResource.SetSalt())
+                            return Close(5);
 
-                        if (connectDTO.Control == 1 || connectDTO.Control == 4)
+                        if (control == 2)
                         {
-                            //old key
-                            if (_firstConnect || !SocketResource.SetSalt())
-                                return Close(5);
-
-                            if (connectDTO.Control == 1)
-                                return await SendAuth();
-                            else
+                            return await SendAuth();
+                        }
+                        else
+                        {
+                            if (await SocketResource.SendAsEncryptBytes(SocketResource.Salt))
                             {
                                 Start();
                                 return 0;
                             }
                         }
-                        else if (connectDTO.Control == 2 || connectDTO.Control == 5)
-                        {
-                            var signature = SocketResource.BuildSignature(connectDTO, SocketResource.NewTokenToReconnect);
-                            if (signature.Length < 1)
-                                return Close(5);
+                    }
+                    else if (control == 1 || control == 4)
+                    {
+                        var pKey = ReadPublicKey(responseDTO);
+                        var signature = SocketResource.BuildSignature(pKey, SocketResource.Salt);
+                        if (signature.Length < 1)
+                            return Close(5);
 
-                            //new key
-                            if (await SocketResource.Ersa.VerifyDataRsa(signature, connectDTO.Sign))
+                        //new key
+                        if (await SocketResource.Ersa.VerifyDataRsa(signature, ReadSign(responseDTO)))
+                        {
+                            if (SocketResource.SetAesGcmKey(pKey.Span, SocketResource.Salt))
                             {
-                                if (SocketResource.SetAesGcmKey(connectDTO.PublicKey.Span, SocketResource.NewTokenToReconnect))
+                                _firstConnect = false;
+                                if (control == 1)
+                                    return await SendAuth();
+                                else
                                 {
-                                    _firstConnect = false;
-                                    if (connectDTO.Control == 2)
-                                        return await SendAuth();
-                                    else
-                                    {
-                                        Start();
-                                        return 0;
-                                    }
+                                    Start();
+                                    return 0;
                                 }
-                                else return Close(5);
                             }
-                            else return Close(4);
+                            else return Close(5);
                         }
                     }
                 }
@@ -502,22 +503,43 @@ namespace EnjoySockets
             return Close(6);
         }
 
-        void FillConnectDTO()
+        byte ReadControl(ReadOnlyMemory<byte> buffer) => buffer.Length < 1 ? (byte)0 : buffer.Span[0];
+        ReadOnlyMemory<byte> ReadPublicKey(ReadOnlyMemory<byte> buffer)
         {
-            if (SocketResource == null) return;
-            ConnectDTOObj.UserId = UserId;
-            ConnectDTOObj.TokenToReconnect.Clear();
-            ConnectDTOObj.TokenToReconnect.AddRange(SocketResource.TokenToReconnect);
-            ConnectDTOObj.NewTokenToReconnect.Clear();
-            ConnectDTOObj.NewTokenToReconnect.AddRange(SocketResource.NewTokenToReconnect);
-            ConnectDTOObj.Key.Clear();
-#if NET8_0
-            ConnectDTOObj.Key.AddRange(SocketResource.PublicKey.Span);
-#else
-            var span = SocketResource.PublicKey.Span;
-            for (int i = 0; i < span.Length; i++)
-                ConnectDTOObj.Key.Add(span[i]);
-#endif
+            if (buffer.Length < 5)
+                return ReadOnlyMemory<byte>.Empty;
+
+            var span = buffer.Span;
+            ushort publicKeyLength = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(1, 2));
+            if (publicKeyLength + 5 > buffer.Length)
+                return ReadOnlyMemory<byte>.Empty;
+
+            return buffer.Slice(5, publicKeyLength);
+        }
+        ReadOnlyMemory<byte> ReadSign(ReadOnlyMemory<byte> buffer)
+        {
+            if (buffer.Length < 5)
+                return ReadOnlyMemory<byte>.Empty;
+
+            var span = buffer.Span;
+            ushort publicKeyLength = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(1, 2));
+            ushort signatureLength = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(3, 2));
+            if (publicKeyLength + signatureLength + 5 > buffer.Length)
+                return ReadOnlyMemory<byte>.Empty;
+
+            return buffer.Slice(5 + publicKeyLength, signatureLength);
+        }
+        ReadOnlyMemory<byte> BuildConnectDTO()
+        {
+            if (SocketResource == null)
+                return ReadOnlyMemory<byte>.Empty;
+
+            RandomNumberGenerator.Fill(SocketResource.Salt);
+            UserId.TryWriteBytes(_bufferConnectDTO.AsMemory().Span);
+            SocketResource.TokenToReconnect.CopyTo(_bufferConnectDTO.AsMemory(16));
+            SocketResource.Salt.CopyTo(_bufferConnectDTO.AsMemory(48));
+            SocketResource.PublicKey.CopyTo(_bufferConnectDTO.AsMemory(80));
+            return _bufferConnectDTO.AsMemory(0, 80 + SocketResource.PublicKey.Length);
         }
 
         async Task<byte> SendAuth()

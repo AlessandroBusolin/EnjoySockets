@@ -274,6 +274,9 @@ namespace EnjoySockets
         {
             try
             {
+                if (data.Length < 1 || signature.Length < 1)
+                    return Task.FromResult(false);
+
                 return Task.FromResult(
                     ProviderToSign?.VerifyData(
                         data.Span,

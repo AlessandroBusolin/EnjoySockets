@@ -1,8 +1,5 @@
 // Copyright (c) Luke Matt. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
-using EnjoySockets.DTO;
-using System.Runtime.InteropServices;
-
 namespace EnjoySockets
 {
     public class ESocketResourceServer : ESocketResource
@@ -39,13 +36,12 @@ namespace EnjoySockets
         int _publicKeyLength;
         int _offsetClientPublicKey;
         byte[] _bufferSignature = new byte[512];
-        internal ValueTask<ReadOnlyMemory<byte>> BuildSignature(ConnectDTO dto)
+        internal ValueTask<ReadOnlyMemory<byte>> BuildSignature(ReadOnlySpan<byte> key)
         {
-            if (dto.Key.Count != _publicKeyLength)
+            if (key.Length != _publicKeyLength)
                 return ValueTask.FromResult(ReadOnlyMemory<byte>.Empty);
 
-            var spanClientKey = CollectionsMarshal.AsSpan(dto.Key);
-            spanClientKey.CopyTo(ToSignature.AsSpan(_offsetClientPublicKey, _publicKeyLength));
+            key.CopyTo(ToSignature.AsSpan(_offsetClientPublicKey, _publicKeyLength));
             TokenToReconnect.CopyTo(ToSignature, ToSignature.Length - TokenToReconnect.Length);
 
             var signTask = Ersa.SignDataRsa(ToSignature.AsMemory(), _bufferSignature);
@@ -75,19 +71,9 @@ namespace EnjoySockets
             return count < 1 ? ReadOnlyMemory<byte>.Empty : new ReadOnlyMemory<byte>(_bufferSignature, 0, count);
         }
 
-        internal bool TryReconnectToken(ReadOnlySpan<byte> token, ReadOnlySpan<byte> salt)
+        internal bool CheckReconnectToken(ReadOnlySpan<byte> token)
         {
-            if (salt.Length != 32)
-                return false;
-            if (TokenToReconnect.AsSpan().SequenceEqual(token))
-            {
-                try
-                {
-                    return SetAesGcmKey(salt);
-                }
-                catch { return false; }
-            }
-            return false;
+            return token.SequenceEqual(TokenToReconnect);
         }
 
         private protected sealed override ERCell? GetReceiveCell(ReadOnlySpan<byte> dto)

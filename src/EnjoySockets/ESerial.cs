@@ -5,6 +5,15 @@ namespace EnjoySockets
 {
     public static class ESerial
     {
+        public static T? Deserialize<T>(ReadOnlySpan<byte> data)
+        {
+            try
+            {
+                return MemoryPackSerializer.Deserialize<T>(data);
+            }
+            catch { return default; }
+        }
+
         public static object? Deserialize(ReadOnlySpan<byte> data, Type type)
         {
             try
@@ -12,6 +21,16 @@ namespace EnjoySockets
                 return MemoryPackSerializer.Deserialize(type, data);
             }
             catch { return default; }
+        }
+
+        public static bool Deserialize(Type type, ReadOnlySpan<byte> data, ref object? obj)
+        {
+            try
+            {
+                MemoryPackSerializer.Deserialize(type, data, ref obj);
+                return true;
+            }
+            catch { return false; }
         }
 
         public static object? Deserialize(ReadOnlySequence<byte> data, Type type)
@@ -24,35 +43,6 @@ namespace EnjoySockets
         }
 
         public static bool Deserialize(ReadOnlySequence<byte> data, Type type, ref object? obj)
-        {
-            try
-            {
-                MemoryPackSerializer.Deserialize(type, data, ref obj);
-                return true;
-            }
-            catch { return false; }
-        }
-
-        public static T? Deserialize<T>(ReadOnlySpan<byte> data)
-        {
-            try
-            {
-                return MemoryPackSerializer.Deserialize<T>(data);
-            }
-            catch { return default; }
-        }
-
-        public static bool Deserialize<T>(ReadOnlySpan<byte> data, ref T? obj)
-        {
-            try
-            {
-                MemoryPackSerializer.Deserialize(data, ref obj);
-                return true;
-            }
-            catch { return false; }
-        }
-
-        public static bool Deserialize(Type type, ReadOnlySpan<byte> data, ref object? obj)
         {
             try
             {
