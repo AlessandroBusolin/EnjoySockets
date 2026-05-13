@@ -16,11 +16,11 @@ namespace EnjoySockets
             _memorySegmentPool = segmentPool;
         }
 
-        public EMemorySegment? ObjToSegments(object obj, Type t)
+        public EMemorySegment? ObjToSegments(object obj, Type t, IESerializer serializer)
         {
             lock (_lock)
             {
-                if (ESerial.Serialize(_bufferWriter, obj, t) == 0 || _bufferWriter.WrittenCount > _msgBuffer)
+                if (serializer.Serialize(_bufferWriter, obj, t) == 0 || _bufferWriter.WrittenCount > _msgBuffer)
                     return null;
 
                 var toWrite = _memorySegmentPool.Rent();

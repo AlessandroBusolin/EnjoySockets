@@ -44,6 +44,14 @@ namespace EnjoySockets
         public ECCurve Curve { get; set; } = ECCurve.NamedCurves.nistP384;
 
         /// <summary>
+        /// Gets or sets the serializer implementation used for object serialization
+        /// in the client/server communication layer.
+        ///
+        /// Default value: <see cref="ESerialMemoryPack"/> (IdSerializer = 0).
+        /// </summary>
+        public IESerializer ESerial { get; set; } = new ESerialMemoryPack();
+
+        /// <summary>
         /// Creates a shallow copy of this configuration.
         /// </summary>
         public virtual ETCPConfig Clone()
@@ -73,7 +81,8 @@ namespace EnjoySockets
                 ResponseTimeout = ResponseTimeout < 100 || ResponseTimeout > 8000 ? 2500 : ResponseTimeout,
                 ConnectTimeout = ConnectTimeout < 1 || ConnectTimeout > 30 ? 3 : ConnectTimeout,
                 Heartbeat = Heartbeat < 0 || Heartbeat > 3600 ? 0 : Heartbeat,
-                Curve = Curve
+                Curve = Curve,
+                ESerial = ESerial
             };
         }
     }
@@ -109,7 +118,8 @@ namespace EnjoySockets
                 KeepAlive = KeepAlive < 10 || KeepAlive > 43200 ? 60 : KeepAlive,
                 ResponseTimeout = ResponseTimeout < 100 || ResponseTimeout > 8000 ? 1500 : ResponseTimeout,
                 Heartbeat = Heartbeat < 1 || Heartbeat > 3600 ? 30 : Heartbeat,
-                Curve = Curve
+                Curve = Curve,
+                ESerial = ESerial
             };
         }
     }

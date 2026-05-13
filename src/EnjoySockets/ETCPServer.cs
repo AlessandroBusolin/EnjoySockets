@@ -434,7 +434,7 @@ namespace EnjoySockets
                             {
                                 if (AuthorizationObj != null)
                                 {
-                                    var objAuth = ESerial.Deserialize(msgBytes.Span, AuthorizationObj);
+                                    var objAuth = Config.ESerial.Deserialize(msgBytes.Span, AuthorizationObj);
                                     var resAuth = await clientAlive.CheckAuthorization(objAuth);
                                     await clientAlive.SocketResource.SendBytes(resAuth);
                                     if (resAuth == 0)
@@ -487,7 +487,7 @@ namespace EnjoySockets
                                         var client = CreateUser(esr);
                                         client.ReleaseEvent = ReleaseUser;
                                         client.AuthorizationMethod = _authorizationMethod;
-                                        var objAuth = ESerial.Deserialize(msgBytes.Span, AuthorizationObj);
+                                        var objAuth = Config.ESerial.Deserialize(msgBytes.Span, AuthorizationObj);
                                         var resAuth = await client.CheckAuthorization(objAuth);
                                         await esr.SendBytes(resAuth);
                                         if (resAuth == 0)

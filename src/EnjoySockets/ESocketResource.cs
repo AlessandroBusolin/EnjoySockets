@@ -158,7 +158,7 @@ namespace EnjoySockets
             var buffer = _eArrayBufferPool.Rent();
             try
             {
-                var payloadLength = ESerial.Serialize(buffer, obj, obj.GetType());
+                var payloadLength = Config.ESerial.Serialize(buffer, obj, obj.GetType());
                 if (payloadLength == 0 || payloadLength > ETCPSocket.MaxPacketSizeConnect)
                     return ValueTask.FromResult(false);
                 return ETCPSocket.Send(BasicSocket, SendArgs, AESgcm, buffer.WrittenMemory);
@@ -176,7 +176,7 @@ namespace EnjoySockets
         internal EMemorySegment? ObjToSegments<T>(T obj)
         {
             if (obj == null) return null;
-            return ESerializeMsgObj!.ObjToSegments(obj, typeof(T));
+            return ESerializeMsgObj!.ObjToSegments(obj, typeof(T), Config.ESerial);
         }
 
         internal virtual void DisposeReceiveDataFromChannel(EReceiveData? eData)
@@ -288,7 +288,7 @@ namespace EnjoySockets
 
         internal long TryPushReceiveDTO(EReceiveData eData, ReadOnlySpan<byte> dto)
         {
-            var result = eData.TryPushPart(dto, MemorySegmentPool);
+            var result = eData.TryPushPart(dto, MemorySegmentPool, Config.ESerial);
 
             if (result == 1)
                 return 1;

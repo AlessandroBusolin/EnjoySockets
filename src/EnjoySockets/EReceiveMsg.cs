@@ -60,7 +60,7 @@ namespace EnjoySockets
         /// 2 - buffer full (unable to rent memory [only server socket])
         /// 3 - invalid arguments (null Cell/BufferControl, empty data, or deserialization failure)
         /// </returns>
-        internal sealed override int TryPushPart(ReadOnlySpan<byte> part, EMemorySegmentPool segmentPool)
+        internal sealed override int TryPushPart(ReadOnlySpan<byte> part, EMemorySegmentPool segmentPool, IESerializer serializer)
         {
             if (Cell == null)
                 return 3;
@@ -75,7 +75,7 @@ namespace EnjoySockets
             var payload = ESocketResource.ReadPayload(part);
             if (payloadLength >= TotalBytes)
             {
-                bool success = Cell.Deserialize(payload, ref FinalArg);
+                bool success = Cell.Deserialize(payload, ref FinalArg, serializer);
                 return success ? 0 : 3;
             }
 
@@ -94,7 +94,7 @@ namespace EnjoySockets
 
             if (WroteBytes >= TotalBytes)
             {
-                FinalArg = Cell.Deserialize(_pipeSegments.Read());
+                FinalArg = Cell.Deserialize(_pipeSegments.Read(), serializer);
                 ClearPipeSegments();
                 return 0;
             }

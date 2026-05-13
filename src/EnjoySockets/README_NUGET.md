@@ -12,10 +12,13 @@ While working on numerous client-server projects, I often found myself lacking a
 
 ## Serialization & Models
 
-The library leverages the **MemoryPack** engine for maximum efficiency.
+The library uses **MemoryPack** as the default serializer for high-performance binary serialization.
+
+You can also provide your own binary serializer implementation (for example **MessagePack** or **Protocol Buffers**) through the `ESerial` property in `ETCPConfig`.
+To implement a custom serializer, create a class that implements the `IESerializer` interface and assign an instance of that class to the configuration.
 
 > [!IMPORTANT]
-> Your message models must be marked as `partial` and have the `[MemoryPackable]` attribute. For advanced scenarios, refer to the [MemoryPack documentation](https://github.com/Cysharp/MemoryPack).
+> When using the default MemoryPack serializer, your message models must be marked as `partial` and have the `[MemoryPackable]` attribute. For advanced scenarios, refer to the [MemoryPack documentation](https://github.com/Cysharp/MemoryPack).
 
 ## Installation
 
@@ -42,7 +45,7 @@ To use Native AOT, add these sections to your `.csproj` and ensure you include t
 
 <ItemGroup>
   <TrimmerRootAssembly Include="EnjoySockets" />
-  <TrimmerRootAssembly Include="YourProject.Logic" />
+  <TrimmerRootAssembly Include="YourProject" />
 </ItemGroup>
 
 ```

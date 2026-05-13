@@ -554,7 +554,7 @@ namespace EnjoySockets
                 if (msg.Length < 1)
                     return Close(6);
 
-                var resAuth = ESerial.Deserialize<byte>(msg.Span);
+                var resAuth = SocketResource.Config.ESerial.Deserialize<byte>(msg.Span);
                 if (resAuth == 0)
                     Start();
                 return resAuth;

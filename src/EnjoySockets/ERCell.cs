@@ -96,7 +96,7 @@ namespace EnjoySockets
             }
         }
 
-        internal bool Deserialize(ReadOnlySpan<byte> bytesData, ref object? obj)
+        internal bool Deserialize(ReadOnlySpan<byte> bytesData, ref object? obj, IESerializer serializer)
         {
             if (ArgType == null)
                 return true;
@@ -104,7 +104,7 @@ namespace EnjoySockets
             if (ArgObjectsPool != null)
             {
                 obj = ArgObjectsPool.Rent();
-                if (!ESerial.Deserialize(ArgType, bytesData, ref obj))
+                if (!serializer.Deserialize(ArgType, bytesData, ref obj))
                 {
                     ArgObjectsPool.Return(obj);
                     return ArgAllowNull;
@@ -113,7 +113,7 @@ namespace EnjoySockets
             }
             else
             {
-                obj = ESerial.Deserialize(bytesData, ArgType);
+                obj = serializer.Deserialize(bytesData, ArgType);
                 if (obj == null)
                     return ArgAllowNull;
                 else
@@ -121,7 +121,7 @@ namespace EnjoySockets
             }
         }
 
-        internal object? Deserialize(ReadOnlySequence<byte> bytesData)
+        internal object? Deserialize(ReadOnlySequence<byte> bytesData, IESerializer serializer)
         {
             if (ArgType == null)
                 return null;
@@ -129,7 +129,7 @@ namespace EnjoySockets
             if (ArgObjectsPool != null)
             {
                 var obj = ArgObjectsPool.Rent();
-                if (!ESerial.Deserialize(bytesData, ArgType, ref obj))
+                if (!serializer.Deserialize(bytesData, ArgType, ref obj))
                 {
                     ArgObjectsPool.Return(obj);
                     return null;
@@ -137,7 +137,7 @@ namespace EnjoySockets
                 return obj;
             }
             else
-                return ESerial.Deserialize(bytesData, ArgType);
+                return serializer.Deserialize(bytesData, ArgType);
         }
 
         internal void ReturnArgToPool(object? obj)
