@@ -14,7 +14,7 @@ namespace EnjoySockets
 
         internal T1? SocketResource;
 
-        private protected object _lock = new();
+        private protected readonly object _lock = new();
 
         public ESession(T1 esr)
         {

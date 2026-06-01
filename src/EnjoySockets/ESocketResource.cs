@@ -10,7 +10,7 @@ namespace EnjoySockets
     {
         internal Socket? BasicSocket { get; set; }
         internal bool Running { get; private set; }
-        private protected object _Lock = new();
+        private protected readonly object _Lock = new();
 
         public ESocketRole SocketRole { get; }
         /// <summary>

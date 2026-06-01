@@ -148,7 +148,7 @@ namespace EnjoySockets
 
             var segments = SocketResource.ObjToSegments(obj);
 
-            if (segments == null && obj != null)
+            if (segments == null && obj is object)
                 return ETransactResult.ExecutionFailed;
 
             if (segments != null && segments.WrittenBytes > SocketResource.MessageBuffer)
@@ -249,7 +249,7 @@ namespace EnjoySockets
             if (t < 1) return default;
 
             var segments = SocketResource.ObjToSegments(obj);
-            if (segments == null && obj != null)
+            if (segments == null && obj is object)
                 return default;
 
             if (segments != null && segments.WrittenBytes > SocketResource.MessageBuffer)
@@ -311,7 +311,7 @@ namespace EnjoySockets
                 return false;
 
             var segments = SocketResource.ObjToSegments(obj);
-            if (segments == null && obj != null)
+            if (segments == null && obj is object)
                 return false;
 
             if (segments != null && segments.WrittenBytes > SocketResource.MessageBuffer)

@@ -153,7 +153,7 @@ namespace EnjoySockets
                 return ValueTask.FromResult(false);
 
             var segments = socketResource.ObjToSegments(obj);
-            if (segments == null && obj != null)
+            if (segments == null && obj is object)
                 return ValueTask.FromResult(false);
 
             var rentBytesToBuffer = segments?.WrittenBytes ?? ETCPSocket.MinBufferSlotSizeBytes;

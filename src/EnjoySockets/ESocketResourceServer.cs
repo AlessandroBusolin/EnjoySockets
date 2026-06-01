@@ -286,8 +286,7 @@ namespace EnjoySockets
                 if (segments == null)
                     return ValueTask.FromResult(false);
 
-                var rentBytesToBuffer = segments?.WrittenBytes ?? ETCPSocket.MinBufferSlotSizeBytes;
-                rentBytesToBuffer = Math.Max(rentBytesToBuffer, ETCPSocket.MinBufferSlotSizeBytes);
+                var rentBytesToBuffer = Math.Max(segments.WrittenBytes, ETCPSocket.MinBufferSlotSizeBytes);
                 if (!sess.BufferToSendMsg.TryRent(rentBytesToBuffer))
                 {
                     segments?.Clear();
