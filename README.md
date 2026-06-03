@@ -23,7 +23,9 @@ Built for fast client-server systems with strong thread safety, low allocations,
   * Request / Response
   * Transactional messaging
 
-* **Serializer Friendly** - works well with serializers like MemoryPack and others.
+* **Session Recovery & Reconnection** - handles transient connection losses, ensuring operations survive and resume during client reconnection modes.
+
+* **Serializer Friendly** - works with binary serializers like `MemoryPack` and others.
 
 ## Designed For
 
@@ -269,7 +271,7 @@ Inherit from `EClient` to handle local session logic, authorization credentials,
 ```csharp
 public class MyUserClient : EClient
 {
-    public MyUserClient(ERSA ersa, ETCPClientConfig config) : base(ersa, config) { }
+    public MyUserClient(ERSA ersa, EClientConfig config) : base(ersa, config) { }
 
     // Provide credentials for the handshake 
 	// (can be a string, class, or any object support via 'MemoryPack')
@@ -289,13 +291,13 @@ public class MyUserClient : EClient
         Console.WriteLine("Session established!");
     }
 
-    protected override void OnReconnectAttempt(int attemptCount, byte attemptResult)
+    protected override void OnReconnectAttempt(int attemptCount, EConnectResult attemptResult)
     {
         // Fired on every background reconnection attempt.
         // You can update the 'Address' property here to point to a fallback server,
         // log attempts, or call Disconnect() to abort the process entirely.
 		// After Disconnect() and next connect attempt, OnConnected() method will be execute. 
-		// 'attemptResult' will be described later in the documentation
+		// 'attemptResult' via EConnectResult
     }
 
     protected override void OnDisconnected()
@@ -322,13 +324,13 @@ public class MyUserServer : EServerSession
     /// <summary>
     /// Mandatory: Must be named 'Authorization' and return Task<byte>.
     /// The input parameter type must match the object type returned by Client's GetAuthorization().
-    /// Return 0 for Success, or any value > 10 for failure (reported to the client).
+    /// Return 0 for Success, or any value > 9 for failure (reported to the client).
     /// </summary>
     protected Task<byte> Authorization(string credentials)
     {
         // Verify user against database/identity provider
         bool isValid = credentials.Contains(":"); 
-        return Task.FromResult(isValid ? (byte)0 : (byte)1);
+        return Task.FromResult(isValid ? EConnectResult.Success : MyLoginResult.InvalidCredentials.ToByte());
     }
 
     protected override bool OnCheckAccess(long accessType)
@@ -354,9 +356,8 @@ public class MyUserServer : EServerSession
 
     protected override void OnDisconnected()
     {
-        // Crucial: This is called when the session is officially dead (KeepAlive timeout 
-        // or manual disconnect). Use this to detach static references so the GC can 
-        // reclaim the memory.
+        // Crucial: This is called when the session is officially dead (KeepAlive timeout or manual disconnect).
+		// Use this to detach static references so the GC can reclaim the memory.
     }
 }
 
@@ -473,21 +474,21 @@ There are two primary ways to connect a client:
 > [!IMPORTANT]
 > **Auto Reconnect** starts working only after the first successful login. If the very first connection attempt fails (e.g., server is offline), the library will return a status code and will **not** start the automatic loop. This applies to the server-side listener as well.
 
-#### Connection Status Codes (`byte`)
+#### Connection Status Codes as `EConnectResult` (`byte`)
 
 | Code | Meaning | Description |
 | --- | --- | --- |
 | **0** | **Success** | Connection established successfully. |
-| **1** | Invalid Endpoint | The provided IP address or port is invalid. |
-| **2** | Timeout | The attempt timed out. Adjust via `ETCPClientConfig.ConnectTimeout`. |
-| **3** | Server Full | The server has reached its maximum connection limit. Adjust via `EServerConfig.MaxSockets`. |
-| **4** | Verification Failed | Handshake failed during server verification. |
-| **5** | Encryption Error | Failed to establish the secure AES-256-GCM key. |
-| **6** | General Failure | An unexpected network or system error occurred. |
-| **7** | Auth Send Failure | Failed to deliver authorization data to the server. |
-| **8** | Invalid Auth Data | Server rejected the authorization payload format. |
-| **9** | Already Active | Connection is already active or an attempt is in progress. |
-| **10** | Aborted | Reconnection loop was interrupted via `Disconnect()`. |
+| **1** | InvalidEndpoint | The provided endpoint (IP/address) is invalid or malformed. |
+| **2** | Timeout | The attempt timed out before a response was received. Adjust via `EClientConfig.ConnectTimeout`. |
+| **3** | ServerFull | The server has reached its maximum capacity and cannot accept new connections. |
+| **4** | ServerVerificationFailed | Server verification failed during the handshake or initial validation. |
+| **5** | HandshakeFailed | Failed to establish a secure connection (e.g., encryption handshake error). |
+| **6** | ServerUnavailable | The server is unavailable or the connection could not be established. |
+| **7** | InvalidAuthData | Authentication data provided by the client is invalid or rejected by the server. |
+| **8** | AlreadyConnectedOrConnecting | Connection is already active or a connection attempt is currently in progress. |
+| **9** | ReconnectCancelled | Reconnection loop was explicitly cancelled (e.g., due to an explicit disconnect). |
+| **> 9** | Custom | User-defined custom error codes mapped via custom enums or raw bytes. |
 
 ---
 
@@ -499,8 +500,8 @@ If you want to implement your own credential validation during the handshake, si
 protected Task<byte> Authorization(T credentials)
 {
     // Your logic: check database, verify tokens, etc.
-    // Return 0 for Success, or any value > 10 for failure (reported to the client).
-    return Task.FromResult((byte)0);
+    // Return 0 for Success, or any value > 9 for failure (reported to the client).
+    return Task.FromResult(EConnectResult.Success);
 }
 
 ```
@@ -597,98 +598,96 @@ This pattern is also applicable to the client side. Since session instances are 
 
 ## 📤 Sending Messages
 
-EnjoySockets offers different sending strategies optimized for the specific roles of the Client and the Server.
+Messaging mechanics differ depending on whether the operation is initiated from the client or the server side.
 
-### Core Sending Methods
+### Client-Side
 
-Both sides share a consistent API for basic communication:
+Every sent message receives an acknowledgment confirming its processing status. This enables automatic flow control (backpressure) to prevent exceeding the configured memory limit (`EConfig.MessageBuffer`), and guarantees execution tracking in critical scenarios.
 
-* `user.Send("Target", data);` - Sends a message with a payload.
-* `user.Send("Target");` - Sends a signal without a payload.
-* `user.Send(instanceId, "Target", data);` - Routes a message to a specific object instance.
+The `EClient` class provides three distinct communication patterns:
 
----
+#### 1. `Send` (Fire & Forget)
+Used for asynchronous server notifications where a business result is not required (e.g., status updates, streaming data chunks). Using `await` ensures the library regulates transmission speed based on buffer availability.
+```csharp
+await client.Send("UpdateStatus", statusDto);
 
-### 🖥️ Server-Side: Built for High Throughput
+```
 
-On the server, performance is the absolute priority. The library focuses on pushing data to the OS socket buffer as fast as possible.
+#### 2. `SendTransact` (Transactional Messaging)
 
-* **Non-blocking:** The `Send` method returns a `bool` immediately, indicating if the data was successfully buffered.
-* **Pre-serialized Buffers:** For maximum efficiency (e.g., in **Multicast** scenarios), the server can send raw `ReadOnlySpan<byte>` via `SendSerialized`. This avoids redundant serialization when sending the same data to thousands of clients.
+Designed for high-priority operations (e.g., financial transactions, inventory updates) that require verification of execution status on the server. The method returns an `ETransactResult`.
+
+Operation state tracking is lost only if a `SessionExpired` code is returned. This indicates the client failed to reconnect to the server within the `EServerConfig.KeepAlive` timeout window.
 
 ```csharp
-// Multicast example
-var serializedData = user.ESerial.Serialize(myObject);
-foreach (var user in connectedUsers)
-{
-    user.SendSerialized("Target", serializedData); // Extremely fast, no re-serialization
+var txResult = await client.SendTransact("BookOrder", orderDto);
+if (txResult == ETransactResult.SessionExpired) 
+{ 
+    // Session expired; state verification required
 }
 
 ```
 
----
+##### Transaction Status Codes (`ETransactResult`)
 
-### 🌐 Client-Side: Reliability & Flow Control
+| Code / Range | Status | Description |
+| --- | --- | --- |
+| **0** | `Success` | Operation completed successfully. |
+| **-1** | `ExecutionFailed` | Internal or runtime error during processing. |
+| **-2** | `BufferFull` | The `EConfig.MessageBuffer` limit was reached. Buffers are saturated. |
+| **-3** | `SessionExpired` | Session expired. The client did not rejoin within the `KeepAlive` window. |
+| **-4** | `AccessDenied` | Missing permissions for the endpoint (fails `EAttr.Access` validation). |
+| **-5** | `InvalidPayload` | Invalid input data format or deserialization failure. |
+| **1 to 1,000,000** | Custom Code | User-defined custom error or status code from application business logic. |
+| **> 1,000,000** | Entity ID | A unique entity identifier generated and returned directly by the server. |
 
-The client features a more sophisticated transmission engine designed to handle real-world network instability.
+#### 3. `SendAndFetch<TResponse, T>` (Request/Response)
+A standard request-response pattern used to retrieve data from the server. In case of network errors or disconnection, the method returns `null`, enabling simple retry logic. The response message size is restricted by `EConfig.MessageBuffer`.
 
-#### ⚖️ Smart Flow Control
+> ⚠️ **Type Selection Note:** Avoid using non-nullable primitive types (e.g., `int`, `bool`) as `TResponse`. In transport failure scenarios, these types return their default values (`0`, `false`), which are indistinguishable from valid server responses. Prefer reference types or nullable value types (e.g., `int?`, `bool?`) to reliably detect failures via `null` checks.
 
-The library monitors the server's capacity and internal buffers. It automatically throttles outgoing messages if there is a risk of overwhelming the server. This mechanism ensures that you should never encounter a "Buffer Full" error under normal conditions.
-
-> [!TIP]
-> Ensure that **ETCPConfig.MessageBuffer** is set to the same value on both the client and server sides.
-
-#### ETCPConfig.MaxPacketSize
-
-`MaxPacketSize` defines the maximum packet size used for `socket.send` in bytes.  
-- Minimum: 1200 bytes  
-- Default: 1300 bytes  
-
-⚠️ **Important:** This value **must be the same** on both the client and the server.  
-A mismatch will cause protocol desynchronization and can lead to errors.
-
-> [!TIP]
-> For low latency, leave this parameter at its default value.
-
-#### 🔄 Reliable Requests: `SendWithResponse`
-
-Unlike a standard fire-and-forget `Send`, `SendWithResponse` is an advanced RPC-like tool that returns a `long` status or ID.
-
-* **Guaranteed Execution:** If the connection drops after calling `SendWithResponse`, the library tracks the message state. Once reconnected, it ensures the message is delivered and the response is retrieved.
-* **State Persistence:** Even if the client is temporarily offline, the server continues processing the logic to ensure a consistent result is ready when the client returns.
-* **Result Codes:**
-* `0` and above: Success (often used for IDs or custom status codes).
-* `-2`: Buffer full (system-level error).
-* `-3`: **Session Expired.** The response could not be retrieved because the session was permanently closed (e.g., via `Disconnect()` or a `KeepAlive` timeout).
-
-> [!IMPORTANT]
-> **Keep-Alive Tuning:** To ensure `SendWithResponse` can recover from longer outages, make sure `EServerConfig.KeepAlive` is set to a value that allows your clients enough time to reconnect and claim their pending responses.
+```csharp
+var invoices = await client.SendAndFetch<InvoiceListDto, InvoiceFilterDto>("GetInvoices", filterDto);
+if (invoices == null) 
+{ 
+    // Network error or transport failure; retry the operation
+}
+```
 
 ---
 
-### 💡 Why use `SendWithResponse`?
+### Server-Side
 
-It is the perfect choice for critical operations where you cannot afford to lose track of the result, such as:
+The server architecture is optimized for high throughput and low-allocation performance:
 
-1. **Object Registration:** Creating a new entity on the server and needing its `instanceId`.
-2. **Transactions:** Adding an item to an inventory and waiting for confirmation.
-3. **Complex Handshakes:** Any logic that requires a reliable "Acknowledge" from the server.
+* **Non-blocking Operations:** The `Send` method immediately returns a `bool`, indicating whether the data was successfully placed into the operating system's socket egress buffer.
+* **Multicast Support (Pre-serialized Buffers):** For broadcasting scenarios, the server can transmit raw data as a `ReadOnlySpan<byte>` using `SendSerialized`. This avoids redundant serialization when distributing identical payloads to thousands of connected clients.
 
+```csharp
+// Multicast example without redundant serialization
+var serializedData = server.ESerial.Serialize(myObject);
+
+foreach (var connectedClient in connectedUsers)
+{
+    connectedClient.SendSerialized("TargetEndpoint", serializedData);
+}
+
+```
 ## 📥 Receiving Messages
 
 To handle incoming data, you create **Access Points** (methods) with a specific signature. The library automatically maps incoming messages to these methods based on their names.
 
 ### Method Signature Requirements
 
-1. **First Parameter (Mandatory):** Must be `EUser` or any derived type (e.g., `MyUserServer` or `MyUserClient`).
-2. **Second Parameter (Optional):** A single object of any type supported by **MemoryPack**. Only one payload parameter is allowed.
+1. **First Parameter (Mandatory):** Must be `ESession` or any derived type (e.g., `MyUserServer` or `MyUserClient`).
+2. **Second Parameter (Optional):** A single object of any type supported by used serializer. Only one payload parameter is allowed.
 3. **Return Types:**
-* **Server-side:** `void`, `Task`, `long`, or `Task<long>`.
+* **Server-side:** `void`, `Task`, `T`, `Task<T>` and transact: `long` or `Task<long>`.
 * **Client-side:** `void` or `Task` (clients do not return values to the server).
 
+4. **No `async void` and ValueTask:** Methods marked as `async void` and ValueTask are not supported and will not be mapped.
 
-4. **No `async void`:** Methods marked as `async void` are not supported and will not be mapped.
+> ⚠️ **Memory Management Warning:** Do not use `ReadOnlyMemory<byte>`, `Memory<byte>`, or other memory/span views within your payload models. The underlying buffer is recycled immediately after deserialization. Retaining or accessing a view within the payload after this point can lead to memory corruption and unpredictable behavior.
 
 ---
 
@@ -778,14 +777,6 @@ public class TestReceiveClass
 
 ---
 
-### 💡 Why use Channels and Pools?
-
-* **Channels:** Prevent "bottlenecks". A slow database save in one channel won't stop fast movement updates in another.
-* **Pools:** Drastically reduce **GC Pressure**. Instead of creating new objects for every message, the library reuses them from the pool.
-* **Access IDs:** Simplify permission management. You can check a user's database-stored rank against the `Access` ID in one central method.
-
----
-
 ## 🧩 Instance Architecture
 
 EnjoySockets routing is **name-based**. To ensure your logic executes correctly, you must follow one golden rule:
@@ -848,7 +839,7 @@ The most common use case for `InstanceRegister` is when a client needs to intera
 
 1. Server-Side: Registration & ID Delivery
 ---
-The server creates the instance and returns the unique ID to the client. Using `SendWithResponse` on the client side is the cleanest way to handle this.
+The server creates the instance and returns the unique ID to the client. Using `SendTransact` on the client side is the cleanest way to handle this.
 
 ```csharp
 // Server-side logic
@@ -882,9 +873,9 @@ Once the client has the ID, they can target that specific instance on the server
 public async Task StartGame()
 {
     // A. Request match creation and get the ID back
-    long matchId = await client.SendWithResponse("CreateMatch", "CyberCity");
+    ETransactResult matchId = await client.SendTransact("CreateMatch", "CyberCity");
 
-    if (matchId > 0)
+    if (matchId.IsEntityId)
     {
         // B. Send messages directly to that specific GameMatch instance on the server
         client.Send(matchId, "JoinTeam", "Blue");
@@ -1115,12 +1106,6 @@ public class TradeService
 
 This hybrid approach gives you the best of both worlds: you can keep your logic organized in instances while still enforcing global synchronization where it matters most.
 
-### 💡 Why use Channels?
-
-* **Isolation:** A slow database query in an "Accounting" channel won't slow down the movement updates in a "Physics" channel.
-* **Performance:** Avoiding `lock` blocks reduces CPU context switching and prevents "Thread Starvation."
-* **Predictability:** You can strictly control how many resources are dedicated to specific types of incoming traffic.
-
 ## 📢 Multicasting
 
 EnjoySockets **does not** include a built-in, "one-size-fits-all" multicast function. In complex systems, message routing logic (groups, permissions, instance visibility) varies so much that a generic implementation often becomes a bottleneck or a source of architectural "bloat."
@@ -1195,10 +1180,6 @@ As your project grows, you may eventually reach the limits of vertical expansion
 * **Current Architecture:** At this stage, the library does not provide a built-in "out-of-the-box" distributed system (like automatic state synchronization across nodes).
 * **Standard Approach:** For distributed environments, it is recommended to treat each server instance as an independent node. Shared state should be managed via a common persistence layer, such as a centralized SQL database or a distributed NoSQL solution (e.g., Redis for session state, MongoDB for persistence).
 * **Infrastructure Requirements:** Moving to a distributed system requires appropriate IT infrastructure to manage server health, load balancing, and database synchronization.
-
-### Proxy & Custom Solutions
-
-The library's high performance and flexible routing make it an excellent choice for building **custom proxy or gateway nodes**. You can use EnjoySockets to create a lightweight entry point that routes traffic to various backend microservices based on your specific requirements.
 
 ## Future Roadmap
 
