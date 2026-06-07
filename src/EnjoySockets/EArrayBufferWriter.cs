@@ -3,6 +3,12 @@ using System.Diagnostics;
 
 namespace EnjoySockets
 {
+    /// <summary>
+    /// Provides a buffer writer implementation for writing bytes to a preallocated or fixed-size array.
+    /// This is a simplified version of <see cref="ArrayBufferWriter{T}"/> without automatic resizing.
+    /// <para/>
+    /// Supports only <see cref="byte"/> elements.
+    /// </summary>
     public sealed class EArrayBufferWriter : IBufferWriter<byte>
     {
         private byte[] _buffer;

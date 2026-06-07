@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 namespace EnjoySockets
 {
     /// <summary>
-    /// Connection result for 'Connect' or 'ConnectWithAutoReconnect' method in <see cref="EClient"/>
+    /// Connection result for <see cref="EClient.Connect(EAddress?)"/> or <see cref="EClient.ConnectWithAutoReconnect(EAddress?, int)"/> methods.
     /// </summary>
     public readonly record struct EConnectResult(byte Code)
     {
@@ -24,7 +24,7 @@ namespace EnjoySockets
         /// </summary>
         /// <remarks>
         /// This result is triggered when the server does not respond within the
-        /// configured <see cref="EClientConfig.ConnectTimeout"/> period.
+        /// configured <see cref="EConfigClient.ConnectTimeout"/> period.
         /// </remarks>
         public static readonly EConnectResult Timeout = new(2);
 
@@ -83,6 +83,9 @@ namespace EnjoySockets
         /// </summary>
         public bool IsCustomError => Code > 9;
 
+        /// <summary>
+        /// Returns a string representation of the connection result.
+        /// </summary>
         public override string ToString()
             => Code switch
             {
@@ -99,8 +102,14 @@ namespace EnjoySockets
                 _ => $"Custom({Code})"
             };
 
+        /// <summary>
+        /// Converts the connection result to its numeric code.
+        /// </summary>
         public static implicit operator byte(EConnectResult result) => result.Code;
 
+        /// <summary>
+        /// Implicitly converts a <see cref="byte"/> to an <see cref="EConnectResult"/>.
+        /// </summary>
         public static implicit operator EConnectResult(byte code) => new(code);
 
         /// <summary>

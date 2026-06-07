@@ -64,7 +64,7 @@ string pemKeyPublicSign = "-----BEGIN PUBLIC KEY-----<your_pem_key>-----END PUBL
 
 var client = new EClient(new(pemKeyPublic, pemKeyPublicSign));
 
-if(await client.Connect(EAddress.Get()).IsSuccess)
+if((await client.Connect(EAddress.Get())).IsSuccess)
 	await client.Send("TestMethod");
 
 Console.ReadKey();

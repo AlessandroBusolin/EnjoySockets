@@ -2,11 +2,11 @@
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
 namespace EnjoySockets
 {
-    public class ESocketResourceServer : ESocketResource
+    public sealed class ESocketResourceServer : ESocketResource
     {
-        private protected ServerBufferQuota BufferToReceiveMsg;
+        ServerBufferQuota BufferToReceiveMsg;
 
-        internal EServerConfig ConfigServer { get; }
+        internal EConfigServer ConfigServer { get; }
 
         internal int KeepAlive { get; }
         internal bool FirstConnect { get; set; } = true;
@@ -15,7 +15,7 @@ namespace EnjoySockets
 
         internal Func<long, bool>? CheckAccessEvent { get; set; }
 
-        internal ESocketResourceServer(EServerConfig config, ERSA ersa) : base(ESocketRole.Server, config, ersa)
+        internal ESocketResourceServer(EConfigServer config, ERSA ersa) : base(ESocketRole.Server, config, ersa)
         {
             ConfigServer = config.Clone();
             KeepAlive = ConfigServer.KeepAlive * 1000;
@@ -115,7 +115,7 @@ namespace EnjoySockets
         /// <param name="session">
         /// Maximum session ID (inclusive). All sessions with ID less or equal this value will be removed.
         /// </param>
-        private protected void ClearReceiveDataSessions(ulong session)
+        private void ClearReceiveDataSessions(ulong session)
         {
             List<MessageReceiveOperation> sessionsToRemove;
             lock (_Lock)

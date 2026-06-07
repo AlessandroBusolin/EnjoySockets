@@ -8,31 +8,22 @@ using static EnjoySockets.ClientSendFlowController;
 
 namespace EnjoySockets
 {
-    public enum EClientStatus
-    {
-        Connected, ReconnectAttempt, Disconnected
-    }
-
     /// <summary>
     /// Represents the client-side session over a reusable socket resource.
     /// </summary>
     /// <remarks>
     /// This class is designed to be reused for the entire lifetime of the application.
+    /// <para/>
     /// It is not disposed after a single connection lifecycle and does not follow a per-connection disposal model.
     /// </remarks>
     public class EClient : ESession<ESocketResourceClient>
     {
         /// <summary>
-        /// Represents the current status of the socket client.
+        /// Represents the current status of the client connection.
         /// </summary>
         /// <remarks>
-        /// Possible values of <see cref="EClientStatus"/>:
-        /// <list type="bullet">
-        ///   <item><description><c>Connected</c> - the client is actively connected to the server.</description></item>
-        ///   <item><description><c>ReconnectAttempt</c> - the client is attempting to reconnect.</description></item>
-        ///   <item><description><c>Disconnected</c> - the client is not connected.</description></item>
-        /// </list>
         /// Regardless of the current status, the client object is reusable.
+        /// <para/>
         /// Do not create new client instances unnecessarily; reuse existing ones whenever possible.
         /// </remarks>
         public EClientStatus Status { get; private set; } = EClientStatus.Disconnected;
@@ -61,7 +52,7 @@ namespace EnjoySockets
         /// The client instance is reusable regardless of its connection status. 
         /// It is recommended to reuse existing instances instead of creating new ones for each connection attempt.
         /// </remarks>
-        public EClient(ERSA ersa, EClientConfig config) : base(new ESocketResourceClient(config, ersa))
+        public EClient(ERSA ersa, EConfigClient config) : base(new ESocketResourceClient(config, ersa))
         {
             DispatcherRegistry.Initialize();
             if (SocketResource != null)
@@ -115,7 +106,7 @@ namespace EnjoySockets
         /// <remarks>
         /// This method guarantees that a response will be received even if the connection was temporarily lost and the client is in reconnection mode.
         /// <para>
-        /// The returned <see langword="long"/> value encodes the outcome:
+        /// The returned <c><see cref="ETransactResult.Code"/></c> value encodes the outcome:
         /// <list type="bullet">
         /// <item><c><see cref="ETransactResult.Success"/> (0)</c> - the operation completed successfully.</item>
         /// <item><c><see cref="ETransactResult.ExecutionFailed"/> (-1)</c> - method execution failed.</item>
@@ -135,8 +126,7 @@ namespace EnjoySockets
         /// <param name="target">The destination to which the message is sent.</param>
         /// <param name="obj">The payload object to send. May be <see langword="null"/>.</param>
         /// <returns>
-        /// A <see langword="long"/> representing the outcome:
-        /// <c><see cref="ETransactResult.IsSuccess"/> (0)</c> for success, <c><see cref="ETransactResult.IsSystemError"/> (&lt;0)</c> for predefined errors.
+        /// <see cref="ETransactResult"/>
         /// </returns>
         public async ValueTask<ETransactResult> SendTransact<T>(long instance, string target, T? obj)
         {
@@ -551,7 +541,8 @@ namespace EnjoySockets
                     if (control == 2 || control == 5)
                     {
                         //old key
-                        if (_firstConnect || !SocketResource.SetSalt())
+                        SocketResource.SetTokenToReconnect();
+                        if (_firstConnect)
                             return Close(EConnectResult.HandshakeFailed);
 
                         if (control == 2)
@@ -705,6 +696,12 @@ namespace EnjoySockets
         }
 
         CancellationTokenSource? _heartbeatCts;
+        /// <summary>
+        /// Starts the heartbeat loop for the session, periodically sending or handling keep-alive signals.
+        /// <para/>
+        /// The operation is idempotent - calling it multiple times has no effect if already running.
+        /// </summary>
+        /// <param name="cycleTime">The interval in milliseconds between heartbeat executions.</param>
         public void HeartbeatStart(int cycleTime = 2000)
         {
             CancellationTokenSource cts;
@@ -721,6 +718,11 @@ namespace EnjoySockets
             _ = StartHandleHeartbeat(cts, cycleTime);
         }
 
+        /// <summary>
+        /// Stops the heartbeat loop and releases all associated resources.
+        /// <para/>
+        /// If the heartbeat is not running, this method has no effect.
+        /// </summary>
         public void HeartbeatStop()
         {
             CancellationTokenSource? cts;

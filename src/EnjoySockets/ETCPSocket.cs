@@ -6,11 +6,6 @@ using System.Runtime.InteropServices;
 
 namespace EnjoySockets
 {
-    public enum ESocketRole
-    {
-        Server, Client
-    }
-
     internal sealed class ETCPSocket
     {
         //length packet from socket

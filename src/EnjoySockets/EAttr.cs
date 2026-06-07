@@ -5,30 +5,41 @@ using System.Runtime.CompilerServices;
 
 namespace EnjoySockets
 {
+    /// <summary>
+    /// Defines runtime behavior for methods including access control, channel routing, parameter constraints, and pooling configuration.
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
     public class EAttr : Attribute
     {
         private int maxParamSize = 0;
         /// <summary>
-        /// Max size param object in bytes. 0 value means without limits. Default value is 0.
+        /// Max size param object in bytes. 0 value means without limits.
+        /// <para/>
+        /// Default value is 0.
         /// </summary>
         public int MaxParamSize { get { return maxParamSize; } set { maxParamSize = value; AddChange(); } }
 
         private long access;
         /// <summary>
-        /// Value define access to method. 0 value means access always open. Default value is 0. (Work only on server type methods)
+        /// Value define access to method. 0 value means access always open. 
+        /// <para/>
+        /// Default value is 0. (Work only server-side methods [<see cref="EServerSession"/>])
         /// </summary>
         public long Access { get { return access; } set { access = value; AddChange(); } }
 
         private ushort channelId;
         /// <summary>
-        /// Channel id set as const ushort with 'EAttrChannel' in entire project. Default is 0 which use: [EAttrChannel(ChannelType = EChannelType.Private, ChannelTasks = 1)]
+        /// Channel id set as const ushort with <see cref="EAttrChannel"/> in entire project.
+        /// <para/>
+        /// Default is 0 which use: ChannelType = <c><see cref="EChannelType.Private"/></c> and ChannelTasks = <c>1</c>.
         /// </summary>
         public ushort ChannelId { get { return channelId; } set { channelId = value; AddChange(); } }
 
         private ushort pooling;
         /// <summary>
-        /// Pool id set as const ushort with 'EAttrPool' in entire project. Default is 0 - means no pooling.
+        /// Pool id set as const ushort with 'EAttrPool' in entire project.
+        /// <para/>
+        /// Default is 0 - means no pooling.
         /// </summary>
         public ushort PoolId { get { return pooling; } set { pooling = value; AddChange(); } }
 
@@ -46,7 +57,7 @@ namespace EnjoySockets
             }
         }
         /// <summary>
-        /// Change all default property from 'attr' param
+        /// Change all default property from 'EAttr' param
         /// </summary>
         internal void Fill(EAttr? attr)
         {

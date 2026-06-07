@@ -12,7 +12,7 @@ namespace EnjoySockets
         internal bool Running { get; private set; }
         private protected readonly object _Lock = new();
 
-        public ESocketRole SocketRole { get; }
+        internal ESocketRole SocketRole { get; }
         /// <summary>
         /// Buffer in bytes
         /// </summary>
@@ -108,7 +108,8 @@ namespace EnjoySockets
             {
                 _outPublicKey.ImportSubjectPublicKeyInfo(outPublicKey, out _);
                 ECDH.DeriveKeyMaterial(_outPublicKey.PublicKey).CopyTo(AESKey, 0);
-                return SetAesGcmKey(salt);
+                SetTokenToReconnect(salt);
+                return AESgcm.SetKey(AESKey, salt);
             }
             catch
             {
@@ -116,10 +117,9 @@ namespace EnjoySockets
             }
         }
 
-        internal bool SetAesGcmKey(ReadOnlySpan<byte> salt)
+        internal void SetTokenToReconnect(ReadOnlySpan<byte> salt)
         {
             salt.CopyTo(TokenToReconnect);
-            return AESgcm.SetKey(AESKey, salt);
         }
 
         /// <summary>

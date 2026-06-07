@@ -2,14 +2,14 @@
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
 namespace EnjoySockets
 {
-    public class ESocketResourceClient : ESocketResource
+    public sealed class ESocketResourceClient : ESocketResource
     {
         internal byte[] Salt = new byte[32];
 
-        internal EClientConfig ConfigClient { get; }
+        internal EConfigClient ConfigClient { get; }
         internal ClientReliableSendTracker MsgTracker { get; }
 
-        internal ESocketResourceClient(EClientConfig config, ERSA ersa) : base(ESocketRole.Client, config, ersa)
+        internal ESocketResourceClient(EConfigClient config, ERSA ersa) : base(ESocketRole.Client, config, ersa)
         {
             ConfigClient = config.Clone();
             MsgTracker = new();
@@ -39,13 +39,9 @@ namespace EnjoySockets
             return ToSignature.AsMemory();
         }
 
-        internal bool SetSalt()
+        internal void SetTokenToReconnect()
         {
-            try
-            {
-                return SetAesGcmKey(Salt);
-            }
-            catch { return false; }
+            SetTokenToReconnect(Salt);
         }
 
         private protected sealed override DispatchHandler? GetReceiveHandler(ReadOnlySpan<byte> dto)

@@ -66,6 +66,9 @@ namespace EnjoySockets
         /// </summary>
         public bool IsEntityId => Code > EServerSession.MinUniqueId;
 
+        /// <summary>
+        /// Returns a string representation of the transaction result.
+        /// </summary>
         public override string ToString()
             => Code switch
             {
@@ -80,8 +83,14 @@ namespace EnjoySockets
                 _ => $"Unknown({Code})"
             };
 
+        /// <summary>
+        /// Converts the transaction result to its numeric code.
+        /// </summary>
         public static implicit operator long(ETransactResult result) => result.Code;
 
+        /// <summary>
+        /// Implicitly converts a <see cref="long"/> to an <see cref="ETransactResult"/>.
+        /// </summary>
         public static implicit operator ETransactResult(long code) => new(code);
 
         /// <summary>

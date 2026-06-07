@@ -5,17 +5,38 @@ using System.Net.Sockets;
 
 namespace EnjoySockets
 {
+    /// <summary>
+    /// Represents a base class for a network session bound to a socket resource.
+    /// <para/>
+    /// Provides access to serialization and basic endpoint information.
+    /// </summary>
     public abstract class ESession<T1> where T1 : ESocketResource
     {
         internal Guid UserId { get; set; }
+
+        /// <summary>
+        /// Gets the serializer instance used for encoding and decoding network messages in this session.
+        /// </summary>
         public IESerializer ESerial { get; }
+
+        /// <summary>
+        /// Gets the remote endpoint of the connected socket.
+        /// </summary>
         public EndPoint? EndPointSocket { get => SocketResource?.BasicSocket?.RemoteEndPoint; }
+
+        /// <summary>
+        /// Gets the address family (IPv4/IPv6) of the underlying socket connection.
+        /// </summary>
         public AddressFamily? AddressFamilySocket { get => SocketResource?.BasicSocket?.AddressFamily; }
 
         internal T1? SocketResource;
 
         private protected readonly object _lock = new();
 
+        /// <summary>
+        /// Initializes a new instance of <see cref="ESession{T1}"/> bound to the specified socket resource.
+        /// </summary>
+        /// <param name="esr">The socket resource associated with this session.</param>
         public ESession(T1 esr)
         {
             SocketResource = esr;

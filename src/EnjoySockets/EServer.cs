@@ -27,7 +27,7 @@ namespace EnjoySockets
         /// </summary>
         /// <param name="rsaKey">RSA keys used for encryption and signing of connection data.</param>
         /// <param name="config">The server configuration settings, including maximum connections, timeouts, and other behavior parameters.</param>
-        public EServer(ERSA rsaKey, EServerConfig config) : base(rsaKey, config) { }
+        public EServer(ERSA rsaKey, EConfigServer config) : base(rsaKey, config) { }
     }
 
     public class EServer<T1> where T1 : EServerSession
@@ -57,7 +57,7 @@ namespace EnjoySockets
         ArrayPool<byte> _poolConnectArray = ArrayPool<byte>.Create();
         readonly ConcurrentDictionary<Guid, EServerSession> _clients = new();
 
-        internal EServerConfig Config { get; private set; }
+        internal EConfigServer Config { get; private set; }
 
         /// <summary>
         /// Initializes an server instance configured to accept a specified number of clients,
@@ -72,17 +72,17 @@ namespace EnjoySockets
         /// </summary>
         /// <param name="rsaKey">RSA keys used for encryption and signing of connection data.</param>
         /// <param name="config">The server configuration settings, including maximum connections, timeouts, and other behavior parameters.</param>
-        public EServer(ERSA rsaKey, EServerConfig config)
+        public EServer(ERSA rsaKey, EConfigServer config)
         {
             DispatcherRegistry.Initialize();
-            Config = config?.Clone() ?? new EServerConfig();
+            Config = config?.Clone() ?? new EConfigServer();
             _rsaKey = rsaKey.CloneObjectToServer();
             _delayAfterFullError = Config.ResponseTimeout / 2;
             CheckUserObjAndTrySetAuth();
         }
 
         static readonly ConcurrentStack<ESocketResourceServer> _poolESR = new();
-        static ESocketResourceServer RentESR(EServerConfig config, ERSA rsa)
+        static ESocketResourceServer RentESR(EConfigServer config, ERSA rsa)
         {
             if (_poolESR.TryPop(out var s))
                 return s;
@@ -428,7 +428,7 @@ namespace EnjoySockets
                     {
                         if (await clientAlive.SocketResource.SendAsPlainBytes(_reconnectResponse))
                         {
-                            clientAlive.SocketResource.SetAesGcmKey(ReadSalt(connectDTO));
+                            clientAlive.SocketResource.SetTokenToReconnect(ReadSalt(connectDTO));
                             var msgBytes = await clientAlive.SocketResource.ReceiveEncryptWithTimeout();
                             if (msgBytes.Length > 1)
                             {

@@ -19,6 +19,9 @@ namespace EnjoySockets
         /// </summary>
         public static readonly ESabotageResult Flooding = new(2);
 
+        /// <summary>
+        /// Returns a string representation of the sabotage result.
+        /// </summary>
         public override string ToString()
             => Code switch
             {
@@ -27,8 +30,14 @@ namespace EnjoySockets
                 _ => $"Custom({Code})"
             };
 
+        /// <summary>
+        /// Converts the sabotage result to its numeric code.
+        /// </summary>
         public static implicit operator int(ESabotageResult result) => result.Code;
 
+        /// <summary>
+        /// Implicitly converts a <see cref="int"/> to an <see cref="ESabotageResult"/>.
+        /// </summary>
         public static implicit operator ESabotageResult(int code) => new(code);
 
         /// <summary>

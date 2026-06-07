@@ -2,6 +2,9 @@
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
 namespace EnjoySockets
 {
+    /// <summary>
+    /// Specifies pooling configuration for a field.
+    /// </summary>
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class EAttrPool : Attribute
     {

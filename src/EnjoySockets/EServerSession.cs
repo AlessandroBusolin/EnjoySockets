@@ -5,31 +5,25 @@ using System.Reflection;
 
 namespace EnjoySockets
 {
-    public enum EServerSessionStatus
-    {
-        Alive, ReconnectAttempt, BypassToReconnect, Dead
-    }
-
+    /// <summary>
+    /// Represents a server-side network session bound to a single client connection.
+    /// Managed by <see cref="EServer"/> and used for handling communication, state, and lifecycle of the connected socket.
+    /// </summary>
     public class EServerSession : ESession<ESocketResourceServer>
     {
         /// <summary>
-        /// Represents the current status of the socket server.
+        /// Represents the current status of the server session.
         /// </summary>
-        /// <remarks>
-        /// Possible values of <see cref="EServerSessionStatus"/>:
-        /// <list type="bullet">
-        ///   <item><description><c>Alive</c> – the client is active and operational.</description></item>
-        ///   <item><description><c>ReconnectAttempt</c> – the client is trying to reconnect.</description></item>
-        ///   <item><description><c>BypassToReconnect</c> – the client is bypassed temporarily to perform reconnection logic.</description></item>
-        ///   <item><description><c>Dead</c> – the client object is no longer usable; it should not be accessed,
-        ///   allowing the garbage collector to collect it safely.</description></item>
-        /// </list>
-        /// </remarks>
         public EServerSessionStatus Status { get; private set; } = EServerSessionStatus.Alive;
         internal MethodInfo? AuthorizationMethod { get; set; }
         internal Action<EServerSession, ESocketResourceServer?>? ReleaseEvent { get; set; }
         internal ServerBufferQuota BufferToSendMsg { get; private set; }
 
+        /// <summary>
+        /// Initializes a new instance of <see cref="EServerSession"/> using the specified socket resource.
+        /// The session is automatically managed by the server and should not be created manually in normal usage.
+        /// </summary>
+        /// <param name="eSocketResource">The underlying socket resource associated with the session.</param>
         public EServerSession(ESocketResourceServer eSocketResource) : base(eSocketResource)
         {
             BufferToSendMsg = new(eSocketResource.MessageBuffer);

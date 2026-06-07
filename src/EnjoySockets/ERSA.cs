@@ -7,15 +7,19 @@ namespace EnjoySockets
 {
     /// <summary>
     /// Extended RSA helper that provides:
-    /// - RSA encryption (OAEP SHA-256)
-    /// - RSA decryption
-    /// - RSA-PSS signing (SHA-256)
-    /// - RSA signature verification
-    ///
+    /// <list type="bullet"><c>
+    /// <item>RSA encryption (OAEP SHA-256)</item>
+    /// <item>RSA decryption</item>
+    /// <item>RSA-PSS signing (SHA-256)</item>
+    /// <item>RSA signature verification</item>
+    /// </c></list>
+    /// <para/>
     /// The class keeps two independent RSA providers:
-    /// - one for encryption/decryption
-    /// - one for signing/verification
-    ///
+    /// <list type="bullet"><c>
+    /// <item>one for encryption/decryption</item>
+    /// <item>one for signing/verification</item>
+    /// </c></list>
+    /// <para/>
     /// Methods are virtual and asynchronous to allow overriding
     /// (e.g., loading keys from external sources like HSM, API, or vault).
     /// </summary>
@@ -36,7 +40,7 @@ namespace EnjoySockets
 
         /// <summary>
         /// Initializes an empty instance.
-        /// 
+        /// <para/>
         /// This constructor is intended for scenarios where
         /// derived classes initialize RSA providers asynchronously
         /// or from external sources.
